@@ -10,7 +10,7 @@ requirements = [
     'IPython',
     'jsons',  # for spider benchmarking
     'lark',
-    'nltk',
+    #'nltk',
     #'svgling',  # nltk uses svgling to draw derivations
     'numpy',
     'pandas',
@@ -20,10 +20,6 @@ requirements = [
     'torch',
     'transformers',
     'plotly',
-    'maturin',  # for rust parser
-    'psutil',
-    'mkdocs',
-    'mkdocs-material',
 ]
 
 test_requirements = [
@@ -33,7 +29,6 @@ test_requirements = [
     'pre-commit',
     'pytest',
     'pytest-html',
-    'pytest-benchmark',
     'ruff',
 ]
 
@@ -50,7 +45,7 @@ setup(
         'Ben LeBrun',
         'Ben Lipkin',
     ],
-    readme=open('README.md', encoding='utf-8').read(),
+    readme=open('README.md').read(),
     scripts=[],
     packages=['genparse'],
 )

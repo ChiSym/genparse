@@ -82,9 +82,12 @@ class Earley:
         try:
             from genpa_rs import Earley as _Earley, EarleyBool as _EarleyBool
         except ModuleNotFoundError:
-            raise ImportError(
-                'Rust parser from `genpa_rs` package not found. Please ensure the Rust components are properly installed.'
+            import warnings
+
+            warnings.warn(
+                'Cannot find Rust parser from `genpa_rs` package. Parser is not initialized.'
             )
+            return
 
         cfg = cfg.nullaryremove(binarize=True).unarycycleremove().renumber()
         self.cfg = cfg
@@ -151,6 +154,7 @@ class Earley:
             outgoing[k] = list(v)
 
         if self.cfg.R == Boolean:
+            print('using boolean')
             self.impl = _EarleyBool(
                 deep_convert_to_bool(self.rhs),
                 self.cfg.S,

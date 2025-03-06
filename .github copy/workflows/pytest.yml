@@ -1,0 +1,24 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  run_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Run Tests
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          sudo apt-get -y install graphviz
+          pip install --upgrade pip "setuptools>=62.4"
+          make pytest-no-vllm

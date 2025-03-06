@@ -9,10 +9,10 @@ def test_basic():
     %ignore /[ ]/
     """
     #    infer = InferenceSetup('gpt2', grammar, proposal_name='character')
-    infer = InferenceSetup(
-        'gpt2', grammar, proposal_name='token', proposal_opts={'K': 10}, seed=1234
+    infer = InferenceSetup('gpt2', grammar, proposal_name='token')
+    particles = infer(
+        ' ', n_particles=20, ess_threshold=0.5, return_record=True, seed=1234
     )
-    particles = infer(' ', n_particles=20, ess_threshold=0.5, return_record=True)
 
     print(particles)
 
@@ -28,7 +28,6 @@ def test_basic():
     f = '/tmp/viz.html'
     particles.record.plotly().write_html(f)
     print(f'wrote {colors.link("file://" + f)}')
-    infer.free_vllm_gpu_memory()
 
 
 if __name__ == '__main__':

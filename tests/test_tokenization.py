@@ -56,7 +56,7 @@ def test_decoding():
 
 def test_encoding():
     for tokenizer_name, tokenizer in tokenizers:
-        llm = TokenizedLLM(model=DummyLM(), tokenizer=tokenizer)
+        llm = TokenizedLLM(model=DummyLM(), tokenizer=tokenizer, batch_size=0)
 
         for case in cases:
             want = llm.tokenizer.encode(case)
