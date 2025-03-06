@@ -11,12 +11,11 @@ from bench.spider.evaluation import (
 
 
 class Evaluator:
-    def __init__(self, spider_dir: Path, timeout=None):
+    def __init__(self, spider_dir: Path):
         self.tables_path = spider_dir / 'tables.json'
         self.db_path = spider_dir / 'database'
         self.kmaps = build_foreign_key_map_from_json(self.tables_path)
         self.official_evaluator = E.Evaluator()  # the official Spider Evaluator
-        self.timeout = timeout
 
     def evaluate(self, gold: str, pred: str, db_name: str, return_level: bool = False):
         """Returns: bool, Optional[str]
@@ -46,7 +45,7 @@ class Evaluator:
         p_sql = rebuild_sql_val(p_sql)
         p_sql = rebuild_sql_col(p_valid_col_units, p_sql, kmap)
 
-        exec_match = eval_exec_match(db, pred, gold, p_sql, g_sql, timeout=self.timeout)
+        exec_match = eval_exec_match(db, pred, gold, p_sql, g_sql)
         reason = None if exec_match else 'mismatch'
 
         if not return_level:

@@ -2,15 +2,14 @@ import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 const stroke_width = 2;
 const arrow_width = stroke_width * 2;
+const char_width = 8;
 const url_params = new URLSearchParams(window.location.search);
 const frame_background = d3.select("#frame-background");
 const frame_foreground = d3.select("#frame-foreground");
 const zoom_control = d3.zoom().on("zoom", (e) => frame_foreground.attr("transform", e.transform));
 const yspace_slider = document.getElementById('yspace_slider');
 const yspace_value = document.getElementById('yspace_value');
-const charWidth_slider = document.getElementById('charWidth_slider');
-const charWidth_value = document.getElementById('charWidth_value');
-const untangle_checkbox = document.getElementById("untangle_checkbox");
+const untangle_button = document.getElementById("untangle_button");
 const toggle_collapsed_button = document.getElementById("toggle_collapsed_button");
 
 let collapsed = false;
@@ -18,7 +17,6 @@ let current_data = null;
 let leftInfoChoiceCollapsed = null;
 let leftInfoChoiceExpanded = null;
 let particle_yspace = 15;
-let particle_charWidth = 8;
 
 if (url_params.has("path")) {
   document.getElementById("load-path").value = url_params.get("path");
@@ -29,14 +27,14 @@ frame_background.call(zoom_control);
 document.getElementById("fileInput").addEventListener("change", () => loadFile(fileInput.files[0]));
 window.loadByPath = loadByPath;
 yspace_slider.addEventListener('input', updateYSpace);
-charWidth_slider.addEventListener('input', update_charWidth);
-untangle_checkbox.addEventListener("change", setUntangle);
+untangle_button.addEventListener("click", setUntangle);
 toggle_collapsed_button.addEventListener("click", setToggleCollapsed);
 document.getElementById('left-info-select').addEventListener('change', updateLeftInfo);
 
 function loadFile(selectedFile) {
   const reader = new FileReader();
   reader.onload = (event) => {
+    resetUntangleButton(); // Reset untangle button state
     // Update the load-path textbox with the selected file name
     document.getElementById("load-path").value = selectedFile.name;
     // Actually load the file and display it
@@ -95,9 +93,15 @@ function loadByPath(path) {
       current_data = data;
       showData(data, { collapsed, left_info: collapsed ? leftInfoChoiceCollapsed : leftInfoChoiceExpanded });
       updateToggleButtonText();
+      resetUntangleButton(); // Reset untangle button state
       populateLeftInfoSelect({collapsed});
     })
     .catch((error) => console.log(error));
+}
+
+function resetUntangleButton() {
+  untangle_button.disabled = false;
+  untangle_button.textContent = "Untangle";
 }
 
 function updateYSpace() {
@@ -108,17 +112,11 @@ function updateYSpace() {
   }
 }
 
-function update_charWidth() {
-  particle_charWidth = parseFloat(charWidth_slider.value);
-  charWidth_value.textContent = particle_charWidth;
-  if (current_data) {
-    showData(current_data, {collapsed});
-  }
-}
-
 function setUntangle() {
+  untangle_button.disabled = true;
+  untangle_button.textContent = "Untangled";
   if (current_data) {
-    showData(current_data, { collapsed, untangle: untangle_checkbox.checked });
+    showData(current_data, { collapsed, untangle: true });
   }
 }
 
@@ -178,7 +176,7 @@ function highlightAncestors(history, particle, t, i) {
 function showData(data, options = {}) {
   const {
     collapsed = false,
-    untangle = untangle_checkbox.checked,
+    untangle = false,
     left_info = collapsed ? leftInfoChoiceCollapsed : leftInfoChoiceExpanded
   } = options;
 
@@ -191,54 +189,41 @@ function showData(data, options = {}) {
 
   // modify the history data in place however we need
   history.forEach((step, t) => {
-    step.is_resampled = step.resample_indices ? true : false;
 
-    step.re_indices = step.resample_indices ? step.resample_indices :
-      // add in re_indices if they don't exist (each particle is extended)
-      step.re_indices = Array.from({length: step.particles.length}, (_, i) => i);
+    if (!step.resample_indices) {
+      // add in resample_indices if they don't exist (each particle is extended)
+      step.resample_indices = Array.from({length: step.particles.length}, (_, i) => i);
+    }
 
     // Untangling logic (so resampled indices don't need to be sorted in the json input)
-    if (untangle && t > 0 && history[t - 1].is_resampled) {
+    if (untangle && t > 0 && history[t - 1].resample_indices) {
         const prevStep = history[t - 1];
-        const perm = createPermutation(prevStep.re_indices);
+        const perm = createPermutation(prevStep.resample_indices);
         
-        // Reorder previous step's re_indices and current step's particles
-        prevStep.re_indices = perm.permute(prevStep.re_indices);
+        // Reorder previous step's resample_indices and current step's particles
+        prevStep.resample_indices = perm.permute(prevStep.resample_indices);
         step.particles = perm.permute(step.particles);
         
-        // Update current step's re_indices
-        step.re_indices = perm.reIndex(step.re_indices);
-      }
-  });
+        // Update current step's resample_indices
+        step.resample_indices = perm.reIndex(step.resample_indices);
+    }
 
-  history.forEach((step, t) => {
     const particles = step.particles;
     step.weight_total = particles.reduce((acc, p) => logaddexp(acc, p.weight), -Infinity);
-
+    step.is_resampled = step.resample_indices ? true : false;
     particles.forEach((particle, i) => {
       particle.relative_weight = Math.exp(particle.weight - step.weight_total);
       particle.prefix = particle.context.slice(0, -1).join("");
       particle.token = particle.context.slice(-1).join("");
       if (t > 0) {
-        particle.parent = history[t - 1].is_resampled ? history[t - 1].re_indices[i] : i;
+        particle.parent = history[t - 1].is_resampled ? history[t - 1].resample_indices[i] : i;
       }
-      
-      if (untangle && step.is_resampled) {
-        const perm = createPermutation(step.re_indices);
-        
-        // Reorder step's re_indices
-        step.re_indices = perm.permute(step.re_indices);
-      }
-
-      particle.children = step.re_indices
-        .map((v, j) => v === i ? j : null) // find locations where i is resampled
-        .filter(e => e !== null);
-      
     });
-  })
+
+  });
 
   const longest_token_length = Math.max(2, ...history.flatMap(step => step.particles.map(particle => particle.token.length)));
-  const particle_xspace = collapsed ? particle_charWidth * longest_token_length : particle_yspace;
+  const particle_xspace = collapsed ? char_width * longest_token_length : particle_yspace;
   const left_space = 100;
   const x_offset = (left_info ? left_space : 0) + particle_xspace;
   const y_offset = particle_yspace;
@@ -438,45 +423,7 @@ function showData(data, options = {}) {
           .attr("opacity", 0.3)
           .attr("marker-end", "url(#arrow)");
       }
-
     });
-
-    // Add one more step to show resampling
-    if (t === history.length - 1) {
-      const next_step_y = (t + 1) * (collapsed ? 2 * y_offset : particle_yspace * num_particles + y_offset);
-      
-      step.particles.forEach((particle, i) => {
-        const current_location = {
-          x: x_offset + i * particle_xspace,
-          y: y_offset + (collapsed ? 0 : i * particle_yspace) + t * (collapsed ? 2 * y_offset : particle_yspace * num_particles + y_offset),
-        };
-        
-        // Draw a link for each child of the current particle
-        particle.children.forEach(childIndex => {
-          const placeholder_location = {
-            x: x_offset + childIndex * particle_xspace,
-            y: y_offset + (collapsed ? 0 : childIndex * particle_yspace) + next_step_y,
-          };
-          
-          pathGroup
-            .append("path")
-            .attr(
-              "d", link({
-                source: current_location,
-                target: {
-                  x: placeholder_location.x,
-                  y: placeholder_location.y - stroke_width * arrow_width,
-                }})
-            )
-            .attr("id", `link-placeholder-${i}-${childIndex}`)
-            .attr("fill", "none")
-            .attr("stroke-width", stroke_width)
-            .attr("stroke", color_scale(i))
-            .attr("opacity", 0.3)
-            .attr("marker-end", "url(#arrow)");
-        });
-      });
-    }
   });
 
   pathGroup.lower();

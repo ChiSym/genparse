@@ -82,12 +82,11 @@ def get_argparser():
         default='all',
     )
     parser.add_argument(
-        '--sis',
+        '--local-poe',
         action='store_true',
-        help='Perform SIS.',
+        help='Perform IS with uniform weights (local product of experts).',
     )
     parser.add_argument('--verbosity', type=int, default=0)
-    parser.add_argument('--n_replicates', type=int, default=1)
     parser.add_argument(
         '--max-mem-usage',
         type=int,
@@ -99,6 +98,11 @@ def get_argparser():
         type=float,
         default=0.5,
         help='Effective sample size below which resampling triggered, given as a fraction of `n_particles`.',
+    )
+    parser.add_argument(
+        '--evaluate',
+        action='store_true',
+        help='Whether to run the evaluations.',
     )
 
     return parser
@@ -197,15 +201,13 @@ def main():
     parser = get_argparser()
     args = parser.parse_args()
 
-    if args.sis:
-        print('Running SIS: Ignoring ess_threshold argument')
-    else:
-        print(f'Running SMC with ess_threshold={args.ess_threshold}')
+    if args.local_poe:
+        print(
+            'Evaluating with improper weights and no resampling: Ignoring ess_threshold argument'
+        )
 
     if args.proposal == 'character':
         print('Using character proposal: Ignoring K argument')
-    else:
-        print(f'Using token proposal with K={args.K}')
 
     outpath = initialize_output_path(args)
     already_processed = load_processed_examples(outpath)
@@ -213,9 +215,10 @@ def main():
 
     raw_spider_dir = Path('../spider/data/spider')
     spider_dev_data = load_spider_data(raw_spider_dir, split='dev')
+    evaluator = Evaluator(raw_spider_dir)
     prompt_formatter = load_prompt_formatter(raw_spider_dir)
 
-    if len(already_processed) >= (len(spider_dev_data) * args.n_replicates):
+    if len(already_processed) >= len(spider_dev_data):
         return
 
     grammar_dir = 'spider_grammars'
@@ -237,6 +240,7 @@ def main():
     tokenizer = batch_llm.get_tokenizer()
 
     skipped_schema = []
+    n_correct, n_invalid, n_mismatch = 0, 0, 0
     for i, dev_datum in tqdm(
         enumerate(spider_dev_data), total=len(spider_dev_data), smoothing=0.0
     ):
@@ -246,11 +250,10 @@ def main():
                 print(f'Skipping schema {dev_datum.schema_name}')
             continue
 
-        num_already_processed_ex = already_processed.count(
+        if (
             make_example_key(dev_datum.schema_name, dev_datum.utterance)
-        )
-
-        if num_already_processed_ex >= args.n_replicates:
+            in already_processed
+        ):
             print(f'Skipping {i}')
             continue
 
@@ -289,46 +292,92 @@ def main():
 
         step_model.set_prompt(prompt)
 
-        for j in range(0, args.n_replicates - num_already_processed_ex):
-            try:
-                start_time = time.time()
+        try:
+            start_time = time.time()
 
-                if args.sis:
-                    particles = importance_sampling(
-                        batch_model=step_model,
-                        n_particles=args.particles,
-                        return_record=True,
-                    )
+            if args.local_poe:
+                particles = importance_sampling(
+                    batch_model=step_model, n_particles=args.particles, return_record=True
+                )
+            else:
+                particles = smc(
+                    batch_model=step_model,
+                    ess_threshold=args.ess_threshold,
+                    n_particles=args.particles,
+                    return_record=True,
+                )
+
+            end_time = time.time()
+
+            if args.local_poe:
+                particles = ParticleApproximation(
+                    [p._replace(log_weight=0) for p in particles.particles]
+                )
+
+        except Exception as e:
+            print()
+            print(f'Error while running inference on example {i}')
+            print(e)
+            print()
+            continue
+
+        gold = dev_datum.query
+        db = dev_datum.schema_name
+
+        inference_runtime = end_time - start_time
+
+        json_result = {
+            'gold': gold,
+            'db_name': db,
+            'question': dev_datum.utterance,
+            'record': particles.record,
+            'log_ml': particles.log_ml,
+            'time': inference_runtime,
+            'results': {},
+        }
+
+        if args.evaluate:
+            json_result['results']['mbr'] = mbr_eval(
+                particles, evaluator, gold, db, parallel_proposal.eos
+            )
+
+            json_result['results']['posterior_weighted_acc'] = posterior_weighted_eval(
+                particles, evaluator, gold, db, parallel_proposal.eos
+            )
+
+            json_result['results']['viterbi'] = (
+                viterbi_eval(particles, evaluator, gold, db, parallel_proposal.eos)
+                if not args.local_poe
+                else None
+            )
+
+            if args.verbosity > 0:
+                print()
+                print(f"MBR: {json_result['results']['mbr']['pred']}")
+                if not args.local_poe:
+                    print(f"Viterbi: {json_result['results']['viterbi']['pred']}")
+
+                result = json_result['results']['mbr']['result']
+
+                if result[0]:
+                    n_correct += 1
+                elif result[1] == 'invalid':
+                    n_invalid += 1
+                elif result[1] == 'mismatch':
+                    n_mismatch += 1
                 else:
-                    particles = smc(
-                        batch_model=step_model,
-                        ess_threshold=args.ess_threshold,
-                        n_particles=args.particles,
-                        return_record=True,
-                    )
+                    raise ValueError()
 
-                end_time = time.time()
+                n_total = sum((n_correct, n_invalid, n_mismatch))
+                print(
+                    f'MBR results - '
+                    f'correct: {n_correct / n_total:.2f} ({n_correct}), '
+                    f'invalid: {n_invalid / n_total:.2f} ({n_invalid}), '
+                    f'mismatch: {n_mismatch / n_total:.2f} ({n_mismatch}), '
+                    f'inference run time: {inference_runtime:.2f} secs'
+                )
 
-            except Exception as e:
-                print()
-                print(f'Error while running inference run {j} on example {i}')
-                print(e)
-                print()
-                continue
-
-            json_result = {
-                'gold': dev_datum.query,
-                'db_name': dev_datum.schema_name,
-                'question': dev_datum.utterance,
-                'record': particles.record,
-                'log_ml': particles.log_ml,
-                'time': end_time - start_time,
-                'results': {},
-            }
-
-            print(json.dumps(json_result), file=outfile)
-
-    outfile.close()
+        print(json.dumps(json_result), file=outfile)
 
 
 if __name__ == '__main__':

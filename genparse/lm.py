@@ -3,14 +3,13 @@ Language models go here
 """
 
 import asyncio
-import gc
 import numpy as np
-import sys
 import torch
 from arsenal.maths import sample_dict
 
 from genparse.semiring import Float
 from genparse.tokenization import decode_tokenizer_vocab
+from genparse.backends.vllm import vllmpplLLM
 from genparse.util import top_p_filter
 
 
@@ -195,16 +194,15 @@ class TokenizedLLM(LM):
     This is a simple class which wraps a token LLM with a tokenizer.
     """
 
-    def __init__(self, tokenizer, model, temperature=1, top_p=None, eos=None):
+    def __init__(self, tokenizer, model, batch_size, temperature=1, top_p=None):
         self.tokenizer = tokenizer
         self._model = model
+        self._model.batch_size = batch_size
         self._decode = decode_tokenizer_vocab(self.tokenizer)
         self._encode = {x: i for i, x in enumerate(self._decode)}
         self.temperature = temperature
         self.top_p = top_p
-        super().__init__(
-            V=set(self._decode), eos=eos if eos is not None else self.tokenizer.eos_token
-        )
+        super().__init__(V=set(self._decode), eos=self.tokenizer.eos_token)
 
     def encode_prompt(self, prompt):
         "Encode `prompt` as a tuple of tokens (each a string)."
@@ -213,9 +211,9 @@ class TokenizedLLM(LM):
     def __call__(self, context):
         assert isinstance(context, tuple), '`context` must be explicitly tokenized'
         assert set(context) <= self.V, f'OOVs detected: {set(context) - self.V}'
-        assert context[-1] == self.eos, (
-            f'Context must end with eos ({self.eos!r}); got {context = }.'
-        )
+        assert (
+            context[-1] == self.eos
+        ), f'Context must end with eos ({self.eos!r}); got {context = }.'
         if self.temperature == 1 and self.top_p is None:
             return self._model([self._encode[x] for x in context])
         else:
@@ -238,10 +236,14 @@ class TokenizedLLM(LM):
         # For vllm, we need to provide the log probabilities, and
         # _logp is provided by the vllm centralized step function
 
+        assert (
+            not isinstance(self._model, vllmpplLLM) or _logp is not None
+        ), 'vLLM requires `_logp` to be passed.'
+
         if _logp is None:
-            assert isinstance(context, tuple), (
-                'API change; `context` must be explicitly tokenized'
-            )
+            assert isinstance(
+                context, tuple
+            ), 'API change; `context` must be explicitly tokenized'
             assert set(context) <= self.V, f'OOVs detected: {set(context) - self.V}'
 
             tokens = [self._encode[x] for x in context]
@@ -270,16 +272,16 @@ class TokenizedLLM(LM):
 
 
 class VirtualTokenizedLLM(TokenizedLLM):
-    def __init__(self, vllm_engine, **kwargs):
+    def __init__(self, vllm_engine):
         self.llm_engine = vllm_engine
         self.tokenizer = self.llm_engine.get_tokenizer()
-        super().__init__(tokenizer=self.tokenizer, model=vllm_engine, **kwargs)
+        super().__init__(tokenizer=self.tokenizer, model=vllm_engine, batch_size=None)
 
     @classmethod
-    def from_name(cls, model_name, engine_opts={}, **kwargs):
+    def from_name(cls, model_name):
         from vllm import LLMEngine, EngineArgs
 
-        if any(v in model_name for v in ('Llama-3.1', 'Llama-3.2')):
+        if 'Llama-3.1' in model_name:
             # rope_scaling is a hack to make our version of VLLM work with Llama 3.1
             # max_model_len needs to be reduced to fit the quantized 70B model an 80Gb GPU
             return cls(
@@ -290,19 +292,14 @@ class VirtualTokenizedLLM(TokenizedLLM):
                         seed=0,
                         rope_scaling={'type': 'dynamic', 'factor': 1.0},
                         max_model_len=7760,
-                        **engine_opts,
                     )
-                ),
-                **kwargs,
+                )
             )
         else:
             return cls(
                 LLMEngine.from_engine_args(  # seed not used since we are not sampling with vllm
-                    EngineArgs(
-                        model=model_name, tokenizer=model_name, seed=0, **engine_opts
-                    )
-                ),
-                **kwargs,
+                    EngineArgs(model=model_name, tokenizer=model_name, seed=0)
+                )
             )
 
     # TODO: support the following methods, for easier debugging
@@ -324,37 +321,6 @@ class VirtualTokenizedLLM(TokenizedLLM):
 
     async def p_next_async(self, **kwargs):
         raise NotImplementedError()
-
-    def __del__(self):
-        self.free_vllm_gpu_memory()
-
-    def free_vllm_gpu_memory(self):
-        """
-        Frees any residual GPU memory that VLLM allocated.
-
-        Calling this method is only necessary if you will go on to use the GPU later in your code. The
-        GPU memory will be deallocated as normal when the Python process ends. This method allows freeing the GPU memory
-        early.
-
-        Note that the virtual tokenized LLM will become unusable after calling this method. Call this when and only when
-        you're finished with this virtual tokenized LLM.
-        """
-        # We need sys.meta_path to be non-None to import VLLM code.
-        # Per an ImportError, if sys.meta_path is None then
-        # Python is likely shutting down, so we can rely on
-        # VLLM's own cleanup.
-        if sys.meta_path is not None and hasattr(self.llm_engine, 'model_executor'):
-            from vllm.distributed.parallel_state import (
-                destroy_model_parallel,
-                destroy_distributed_environment,
-            )
-
-            destroy_model_parallel()
-            destroy_distributed_environment()
-
-            del self.llm_engine.model_executor
-            gc.collect()
-            torch.cuda.empty_cache()
 
 
 #    def p_next_healing(self, context, top=10):

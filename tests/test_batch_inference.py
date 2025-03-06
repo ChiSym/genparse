@@ -1,8 +1,8 @@
-import gc
 import torch
 import warnings
 import multiprocessing as mp
-from genparse.batch_inference import (
+from genparse.util import lark_guide, set_seed
+from genparse.experimental.batch_inference import (
     BatchLLM,
     BatchVLLM,
     ParallelCharacterProposal,
@@ -12,7 +12,6 @@ from genparse.batch_inference import (
     BatchStepModel,
     smc,
 )
-from genparse.util import lark_guide, set_seed
 
 
 def test_character_abc():
@@ -35,7 +34,7 @@ def test_character_abc():
         prompt=prompt,
     )
 
-    have = smc(step_model, n_particles=n_particles, verbosity=1)
+    have = smc(step_model, n_particles=n_particles)
     have.posterior.assert_equal(want)
 
     # parallel proposal
@@ -43,7 +42,7 @@ def test_character_abc():
     parallel_proposal = ParallelCharacterProposal(
         llm=sequential_llm.llm,
         guide=guide,
-        num_processes=min(mp.cpu_count(), 2),
+        num_processes=mp.cpu_count(),
         max_n_particles=100,
         seed=0,
     )
@@ -54,13 +53,10 @@ def test_character_abc():
         prompt=prompt,
     )
 
-    have = smc(step_model, n_particles=n_particles, verbosity=1)
+    have = smc(step_model, n_particles=n_particles)
     have.posterior.assert_equal(want)
 
-    step_model.cleanup()
-    del sequential_llm.llm._model.model
-    gc.collect()
-    torch.cuda.empty_cache()
+    step_model.cleanup(warn=False)
 
 
 def test_token_abc():
@@ -83,7 +79,7 @@ def test_token_abc():
         prompt=prompt,
     )
 
-    have = smc(step_model, n_particles=n_particles, verbosity=1)
+    have = smc(step_model, n_particles=n_particles)
     have.posterior.assert_equal(want)
 
     # parallel proposal
@@ -92,7 +88,7 @@ def test_token_abc():
         llm=sequential_llm.llm,
         guide=guide,
         K=5,
-        num_processes=min(mp.cpu_count(), 2),
+        num_processes=mp.cpu_count(),
         max_n_particles=100,
         seed=0,
     )
@@ -103,13 +99,10 @@ def test_token_abc():
         prompt=prompt,
     )
 
-    have = smc(step_model, n_particles=n_particles, verbosity=1)
+    have = smc(step_model, n_particles=n_particles)
     have.posterior.assert_equal(want)
 
-    step_model.cleanup()
-    del sequential_llm.llm._model.model
-    gc.collect()
-    torch.cuda.empty_cache()
+    step_model.cleanup(warn=False)
 
 
 def test_vllm_abc():
@@ -129,7 +122,7 @@ def test_vllm_abc():
     parallel_proposal = ParallelCharacterProposal(
         llm=batch_llm.llm,
         guide=guide,
-        num_processes=min(mp.cpu_count(), 2),
+        num_processes=mp.cpu_count(),
         max_n_particles=100,
         seed=0,
     )
@@ -143,13 +136,13 @@ def test_vllm_abc():
     have = smc(step_model, n_particles=n_particles)
     have.posterior.assert_equal(want)
 
-    step_model.cleanup()
+    step_model.cleanup(warn=False)
 
     parallel_proposal = ParallelTokenProposal(
         llm=batch_llm.llm,
         guide=guide,
         K=5,
-        num_processes=min(mp.cpu_count(), 2),
+        num_processes=mp.cpu_count(),
         max_n_particles=100,
         seed=0,
     )
@@ -163,8 +156,7 @@ def test_vllm_abc():
     have = smc(step_model, n_particles=n_particles)
     have.posterior.assert_equal(want)
 
-    step_model.cleanup()
-    batch_llm.free_vllm_gpu_memory()
+    step_model.cleanup(warn=False)
 
 
 if __name__ == '__main__':
