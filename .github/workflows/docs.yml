@@ -1,0 +1,39 @@
+name: Docs
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - mkdocs_branch
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v4
+      with:
+        python-version: 3.11.5
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip "setuptools>=62.4"
+
+    - name: Build docs
+      run: |
+        make mkdocs-no-vllm
+
+    - name: Deploy documentation
+      run: |
+        mkdocs gh-deploy --force

@@ -1,0 +1,168 @@
+#frame-background {
+  fill: rgb(241, 241, 241);
+  stroke: gray;
+}
+
+line.highlight {
+  stroke: blue;
+  stroke-width: 2px;
+  opacity: 0.5;
+}
+
+text {
+  font-size: 16px;
+  font-family: "Iosevka Web", monospace;
+}
+
+.tooltip {
+  font-family: "Iosevka Web", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0;
+  position: absolute;
+  background-color: white;
+  border: 1px solid #ddd;
+  padding: 10px;
+  border-radius: 5px;
+  pointer-events: none;
+  max-width: 600px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.tooltip .title {
+  font-weight: bold;
+  text-decoration: underline;
+  margin-bottom: 5px;
+}
+
+.tooltip .key-value-pair {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+.tooltip .key {
+  font-weight: bold;
+  white-space: pre;
+  text-align: right;
+  min-width: 100px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.tooltip .value {
+  white-space: pre-wrap;
+  flex: 1;
+  text-align: left;
+  max-width: 480px; /* 600px - 100px (key width) - 10px (margin) - 10px (buffer) */
+}
+
+.tooltip .value .array-element {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 0px 3px;
+  margin: 1px;
+  background-color: #f8f8f8;
+  white-space: pre-wrap;
+}
+
+#svg svg {
+  width: calc(100vw - 40px);
+  height: calc(100vh - 140px);
+}
+
+#frame-background {
+  width: 100%;
+  height: 100%;
+}
+
+#yspace_slider {
+  width: 200px;
+  margin: 0 10px;
+}
+
+#yspace_value {
+  display: inline-block;
+  width: 30px;
+  text-align: right;
+}
+
+.step {
+  transition: transform 0.3s ease;
+}
+
+.step text .left-info {
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+  fill: #555;
+}
+
+.particle circle {
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.particle line {
+  stroke: #777;
+  opacity: 0.6;
+  width: 1;
+  stroke-dasharray: 1,4;
+}
+
+.particle text {
+  font-weight: normal;
+  fill: #777;
+  z-index: 10;
+}
+
+.particle text .token {
+  font-weight: bold;
+  fill: black;
+}
+
+.particle text .left-info {
+  font-size: 12px;
+  font-family: Arial, sans-serif;
+  fill: #555;
+}
+
+path.particle-link {
+  fill: none;
+  opacity: 0.3;
+  z-index: -1;
+}
+
+/* Styles for collapsed state */
+.collapsed {
+  .particle circle {
+    opacity: 0.1;
+  }
+}
+
+path.highlighted {
+  stroke-width: 4px !important;
+  opacity: 0.8 !important;
+}
+
+.particle.highlighted text {
+  z-index: 20;
+  text-shadow: 0px 0px 4px yellow;
+}
+
+.particle.highlighted circle {
+  stroke: yellow;
+  stroke-width: 4px;
+}
+
+/* Text background shouldn't be interactable */
+rect.text-background {
+  pointer-events: none;
+}
+
