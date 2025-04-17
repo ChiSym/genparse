@@ -1,13 +1,19 @@
+
+
 ![Docs](https://github.com/ChiSym/genparse/actions/workflows/docs.yml/badge.svg)
 ![Linter](https://github.com/ChiSym/genparse/actions/workflows/ruff.yml/badge.svg)
 ![Tests](https://github.com/ChiSym/genparse/actions/workflows/pytest.yml/badge.svg)
+
+
+> ⚠️ Deprecation Notice ⚠️ 
+This repository is no longer actively maintained.
+Please use [genlm-control](https://github.com/genlm/genlm-control/) instead, which offers improved functionality and ongoing support.
 
 # GenParse
 
 GenParse is a Python library for constrained generation with language models, specialized for tasks like semantic parsing and code generation. It uses sequential Monte Carlo (SMC) inference to ensure that language model generations comply with user-defined syntactic and semantic constraints. The library is equipped with proposal distributions that efficiently enforce syntactic constraints, supports constraints beyond grammaticality through arbitrary scoring (*potential*) functions, and is integrated with [vLLM](https://docs.vllm.ai/en/latest/) for fast language model inference.
 
 
-> **⚠️ Warning:** This library is currently in active development. We recommend frequently pulling the latest version to stay updated with improvements and bug fixes. Please report any bugs in [the issue tracker](https://github.com/probcomp/genparse/issues).
 
 First time here? Go to our [Full Documentation](https://genparse.gen.dev/). 
 
